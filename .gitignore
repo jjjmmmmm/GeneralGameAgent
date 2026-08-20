@@ -21,3 +21,6 @@ outputs/
 .codebuddy/
 Thumbs.db
 .DS_Store
+
+# 本地 issue tracker（spec/tickets，不入仓）
+.scratch/
