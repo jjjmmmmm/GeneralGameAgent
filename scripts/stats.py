@@ -21,20 +21,25 @@ BUTTONS = [
 ]
 
 
-def button_frequency(parquet_path: Path) -> dict[str, float]:
-    """返回 17 键按下占比 {键名: 0~1}。缺列抛 KeyError。"""
+def button_stats(parquet_path: Path) -> tuple[int, dict[str, float], dict[str, int]]:
+    """读 parquet，返回 (帧数, 17 键按下占比, 17 键按下次数)。
+
+    失败：文件不存在抛 FileNotFoundError；缺列抛 KeyError；空文件返回全 0。
+    """
     if not parquet_path.exists():
         raise FileNotFoundError(f"parquet not found: {parquet_path}")
     df = pl.read_parquet(parquet_path)
-    n = df.height
-    if n == 0:
-        return {b: 0.0 for b in BUTTONS}
+    frame_count = df.height
+    if frame_count == 0:
+        return 0, {b: 0.0 for b in BUTTONS}, {b: 0 for b in BUTTONS}
     freq: dict[str, float] = {}
+    counts: dict[str, int] = {}
     for b in BUTTONS:
         if b not in df.columns:
             raise KeyError(f"missing column: {b}")
-        freq[b] = float(df[b].sum()) / n
-    return freq
+        counts[b] = int(df[b].sum())
+        freq[b] = counts[b] / frame_count
+    return frame_count, freq, counts
 
 
 def main() -> None:
@@ -43,24 +48,18 @@ def main() -> None:
         sys.exit(2)
     parquet = Path(sys.argv[1])
     try:
-        freq = button_frequency(parquet)
+        frame_count, freq, counts = button_stats(parquet)
     except (FileNotFoundError, KeyError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 帧数
-    df = pl.read_parquet(parquet)
-    total = df.height
-
-    # Markdown 表格
     print(f"# 按键频率表（{parquet.parent.name}）")
-    print(f"帧数: {total}")
+    print(f"帧数: {frame_count}")
     print()
     print("| 按键 | 按下帧数 | 占比 |")
     print("|---|---|---|")
     for b in BUTTONS:
-        count = int(df[b].sum())
-        print(f"| {b} | {count} | {freq[b]:.1%} |")
+        print(f"| {b} | {counts[b]} | {freq[b]:.1%} |")
 
 
 if __name__ == "__main__":

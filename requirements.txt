@@ -1,0 +1,15 @@
+# nitrogen[serve] 依赖（D3 实测：不用 extras 语法，显式清单 + --no-deps 避开实机注入库）
+# 安装方式（Windows venv）：
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
+#   .venv\Scripts\python.exe -m pip install -e ../NitroGen --no-deps
+# 注意：NitroGen 默认依赖含 vgamepad/dxcam/pyautogui 等实机注入库（本项目不做实机，不装）
+
+pyzmq
+pyyaml
+einops
+transformers
+pydantic
+diffusers
+polars
+numpy
+torch  # 需 cu128：改用 --index-url https://download.pytorch.org/whl/cu128 单独安装
