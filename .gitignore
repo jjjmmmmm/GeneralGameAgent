@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 权重与数据（绝不入仓，仓库 ≤10MB）
+_models/
+_data/
+*.pt
+*.pth
+*.ckpt
+*.parquet
+
+# 生成产物（体积大，不入仓）
+outputs/
+*.png
+*.mp4
+*.gif
+
+# IDE / OS
+.codebuddy/
+Thumbs.db
+.DS_Store
