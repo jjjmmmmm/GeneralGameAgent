@@ -24,3 +24,6 @@ Thumbs.db
 
 # 本地 issue tracker（spec/tickets，不入仓）
 .scratch/
+
+# 日志
+*.log
