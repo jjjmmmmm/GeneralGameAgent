@@ -71,8 +71,14 @@ def main():
     tmp_dir.mkdir(exist_ok=True)
 
     print(f"测试集评测：{len(frames)} 帧（chunk 0032~0034），K={args.k} 多数票")
-    client = ModelClient(host="localhost", port=5555)
-    client.reset()
+    try:
+        client = ModelClient(host="localhost", port=5555)
+        client.reset()
+    except Exception:
+        print("无法连接推理服务 (127.0.0.1:5555)。请先启动 serve：")
+        print("  在 D:\\2+课产品 目录执行: powershell -ExecutionPolicy Bypass -File _start_serve_d5.ps1")
+        print("  详见 docs/演示说明.md 步骤 1")
+        sys.exit(1)
 
     cache = {}
     rows_md = []
@@ -83,41 +89,50 @@ def main():
     }
     t_start = time.time()
 
-    for i, fid in enumerate(frames):
-        img = fetch_frame(fid, tmp_dir)
-        t0 = time.time()
-        pred_btn, last_pred = predict_vote(client, img, args.k, PRED_ROW)
-        dt = time.time() - t0
-        pred_jl = last_pred["j_left"][PRED_ROW]
+    try:
+        for i, fid in enumerate(frames):
+            img = fetch_frame(fid, tmp_dir)
+            t0 = time.time()
+            pred_btn, last_pred = predict_vote(client, img, args.k, PRED_ROW)
+            dt = time.time() - t0
+            pred_jl = last_pred["j_left"][PRED_ROW]
 
-        gt_btn = get_label_btn(fid, cache)
-        gt_jl = np.array(cache[f"{fid // CHUNK_SIZE:04d}"].slice(fid % CHUNK_SIZE, 1)["j_left"].to_list()[0], dtype=float)
+            gt_btn = get_label_btn(fid, cache)
+            gt_jl = np.array(cache[f"{fid // CHUNK_SIZE:04d}"].slice(fid % CHUNK_SIZE, 1)["j_left"].to_list()[0], dtype=float)
 
-        # 按键：按映射取 17 维
-        pred_btn17 = np.array([pred_btn[BUTTON_TO_MODEL_COL[b]] for b in BUTTONS], dtype=int)
-        n_pred = int(pred_btn17.sum())
-        n_gt = int(gt_btn.sum())
-        n_both = int(((pred_btn17 == 1) & (gt_btn == 1)).sum())
-        n_all_correct = int((pred_btn17 == gt_btn).sum())
-        acc = n_all_correct / len(BUTTONS)
-        jl_mse = float(np.mean((pred_jl - gt_jl) ** 2))
-        jl_corr = float(np.corrcoef(pred_jl, gt_jl)[0, 1]) if np.std(pred_jl) > 1e-6 and np.std(gt_jl) > 1e-6 else float("nan")
+            # 按键：按映射取 17 维
+            pred_btn17 = np.array([pred_btn[BUTTON_TO_MODEL_COL[b]] for b in BUTTONS], dtype=int)
+            n_pred = int(pred_btn17.sum())
+            n_gt = int(gt_btn.sum())
+            n_both = int(((pred_btn17 == 1) & (gt_btn == 1)).sum())
+            n_all_correct = int((pred_btn17 == gt_btn).sum())
+            acc = n_all_correct / len(BUTTONS)
+            jl_mse = float(np.mean((pred_jl - gt_jl) ** 2))
+            jl_corr = float(np.corrcoef(pred_jl, gt_jl)[0, 1]) if np.std(pred_jl) > 1e-6 and np.std(gt_jl) > 1e-6 else float("nan")
 
-        agg["n_pred"] += n_pred
-        agg["n_gt"] += n_gt
-        agg["n_both"] += n_both
-        agg["accs"].append(acc)
-        agg["jl_mse"].append(jl_mse)
-        agg["jl_corr"].append(jl_corr)
-        agg["times"].append(dt)
+            agg["n_pred"] += n_pred
+            agg["n_gt"] += n_gt
+            agg["n_both"] += n_both
+            agg["accs"].append(acc)
+            agg["jl_mse"].append(jl_mse)
+            agg["jl_corr"].append(jl_corr)
+            agg["times"].append(dt)
 
-        rows_md.append(
-            f"| {i} | {fid} | {n_pred} | {n_gt} | {n_both} | {n_all_correct}/17 | {acc:.1%} | {jl_mse:.4f} | {jl_corr:+.3f} | {dt:.3f}s |"
-        )
-        if (i + 1) % 50 == 0:
-            print(f"  ...{i+1}/{len(frames)} 帧（累计 {time.time()-t_start:.0f}s）")
+            rows_md.append(
+                f"| {i} | {fid} | {n_pred} | {n_gt} | {n_both} | {n_all_correct}/17 | {acc:.1%} | {jl_mse:.4f} | {jl_corr:+.3f} | {dt:.3f}s |"
+            )
+            if (i + 1) % 50 == 0:
+                print(f"  ...{i+1}/{len(frames)} 帧（累计 {time.time()-t_start:.0f}s）")
 
-    client.close()
+        client.close()
+    except Exception:
+        # 推理服务连接失败/推理中异常（常见：serve 未启动），给出可读提示
+        print("评测失败：无法连接推理服务 (127.0.0.1:5555) 或推理过程异常。")
+        print("  1) 确认 serve 已启动：在 D:\\2+课产品 目录执行 powershell -ExecutionPolicy Bypass -File _start_serve_d5.ps1")
+        print("  2) 确认端口空闲：Test-NetConnection 127.0.0.1 -Port 5555")
+        print("  3) 详见 docs/演示说明.md 步骤 1")
+        sys.exit(1)
+
     total_sec = time.time() - t_start
 
     # ---------- 汇总 ----------

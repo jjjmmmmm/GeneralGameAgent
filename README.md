@@ -26,9 +26,9 @@ NitroGen 是 NVIDIA 开源的通用游戏智能体基础模型（500M 参数 DiT
 | M1 | 跑通官方 ng.pt 推理，README 可复现 | ✅ 已达成（D4） |
 | M2 | 单游戏 ≥500 帧统计 + ≥10 条序列可视化 | ✅ 已达成（D5-D6：42000 帧统计 + 10 条序列总览图） |
 | M3 | 离线评测脚本（≥200 帧隔离测试集） | ✅ 已达成（D6：`scripts/evaluate.py`，chunk_0032~0034 隔离） |
-| M4 | zero-shot 基线：按键准确率 ≥50%、摇杆相关系数 ≥0.4 | 🟡 部分达成（D6：按键准确率 88.3% ✅；摇杆相关系数 -0.1 ❌，D7 归因） |
+| M4 | zero-shot 基线：按键准确率 ≥50%、摇杆相关系数 ≥0.4 | 🟡 部分达成（按键 88.3% ✅；摇杆 -0.1 ❌，**D7 归因收口**：无条件 zero-shot 模型能力上限，见 `docs/键序映射表.md` §4） |
 | M5 | 模型输出 vs 人类标注对比演示 | ✅ 已达成（D6：`results/m5_demo_table.md` 逐帧对比表） |
-| M6 | 归档：代码 + 指标表 + ≥3000 字实验报告 | ⬜ 计划 D8 |
+| M6 | 归档：代码 + 指标表 + ≥3000 字实验报告 | 🟡 D8 闭环中（代码/指标表在仓；实验报告按课程节奏推进） |
 | M7 | 扩展：可视化工具（≥20 段动作曲线 + 差异帧标注） | ✅ 已达成（D7：`viz_curves.py --batch` 21 段 + index.md） |
 
 进度日志：
@@ -40,6 +40,9 @@ NitroGen 是 NVIDIA 开源的通用游戏智能体基础模型（500M 参数 DiT
 - **D5（08-21）**：**主路径贯通**——视频抽帧与 parquet 标注帧对齐三重验证通过（帧号 = chunk_id×1200 + 行号）；M2 前半（42000 帧统计 + 摇杆分布图）；真帧端到端跑通（5 帧链路验证）；演示说明 + 差距清单建立；17↔21 键"前 17 列"假设被 G1 后续推翻。
 - **D6（08-21）**：**核心推进**——G1 键序映射确认（官方 BUTTON_ACTION_TOKENS）；M3 达成（200 帧隔离测试集评测）；M4 部分达标（按键 88.3% ✅ / 摇杆 ❌，见 G11）；M5 对比表；G4 序列可视化补至 10 条；M7 骨架（viz_curves.py）；演示说明 v2 + 自走完成（发现并修复 HF 离线启动坑）。
 - **D7（08-21）**：**贯通验证**——**M7 达成**（viz_curves 批量 21 段 + index.md）；**G11 归因收口**（game conditioning 无接口 / PRED_ROW 18 步全测排除 / 结论=无条件 zero-shot 摇杆能力上限，M4 摇杆不达标如实呈现）；快速通检 6 条（含 2 异常）全过；排错记录 3 案例归档；**18 步动作发现**（pred 实际输出 18 步非 8 步）。
+- **D8（08-21）**：**交付准备**——回归（D7 通检 6 条 + 演示路径自走全过）；验收自测表（`docs/验收自测表.md`，M1~M7 带证据）；审查与安全清单（`docs/审查与安全清单.md`，密钥扫描无命中）；evaluate 入口连接错误可读化（L1）；README 定稿。
+
+完整自测对照见 [`docs/验收自测表.md`](docs/验收自测表.md)。
 
 **范围外（明确不做）**：实机 Windows 游戏接入、模型微调、数据过滤管线、Open P2P 对照、数据集全库下载、自采数据。原因详见立项书第 4 节。
 
@@ -112,6 +115,19 @@ resp = ModelClient("127.0.0.1", 5555).predict(frame)
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*serve.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
+
+### 常见故障排查
+
+| 故障 | 检查与应对 |
+|------|-----------|
+| serve 启动卡死（config 打印后无响应） | `HF_HUB_OFFLINE=1` 是否设置（`_start_serve_d5.ps1` 已内置）；siglip2 缓存是否完整（`~/.cache/huggingface/hub/models--google--siglip2-large-patch16-256/`） |
+| 端口 5555 被占用 | `Get-NetTCPConnection -LocalPort 5555` 找 PID → 按命令行过滤确认是残留 serve 后杀掉（见上方停止服务命令） |
+| 评测报"无法连接推理服务" | serve 未启动。按启动命令起服务，等端口 5555 可连后重跑 |
+| 构建失败（pip install torch） | 确认 Python ≥3.12；cu128 索引 URL 正确（RTX 5060 Blackwell 架构）；镜像不可达时换 `--index-url` 或加代理 |
+| 数据文件缺失 | `Test-Path D:/2+课产品/_models/ng.pt`、`_data/SHARD_0088/Z1r1S--MJS4/`、视频文件四项逐一核对 |
+| 中文显示乱码（Get-Content） | 加 `-Encoding UTF8`（Windows PowerShell 默认 GBK） |
+
+> 回退说明：本项目无数据迁移/数据库，代码回退 = `git revert <commit>` 或 `git reset`（单人仓无冲突风险）。
 
 ### 数据统计与序列可视化（M2，D5-D6 已达成）
 
