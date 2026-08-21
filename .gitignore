@@ -13,9 +13,11 @@ _data/
 
 # 生成产物（体积大，不入仓）
 outputs/
-*.png
+/*.png
 *.mp4
 *.gif
+# 例外：results/figures/ 下的小体积可视化成果图（M2/M7 交付物，仓库 ≤10MB）
+!results/figures/**
 
 # IDE / OS
 .codebuddy/
