@@ -31,8 +31,8 @@ FIG_OUT = ROOT / "results" / "figures"
 FRAME_OUT.mkdir(parents=True, exist_ok=True)
 FIG_OUT.mkdir(parents=True, exist_ok=True)
 
-# D5 用 3 段（D6 补至 ≥10 段，见差距清单 G4）
-SEQ_STARTS = [60, 180, 300]
+# G4（D6）：补齐至 10 段起点（均在统计集 0~640s 内、避开 chunk_0000 菜单期）
+SEQ_STARTS = [60, 180, 300, 420, 450, 480, 510, 540, 570, 600]
 SEQ_LEN = 5
 
 # ---------- 1. 抽帧 ----------
@@ -76,21 +76,22 @@ fig.savefig(FIG_OUT / "joystick_distribution.png", dpi=120)
 plt.close(fig)
 print(f"  -> {FIG_OUT / 'joystick_distribution.png'}")
 
-# ---------- 3. 序列总览图（3 段横排，每段 5 帧 + 动作条形） ----------
+# ---------- 3. 序列总览图（10 段横排，每段 5 帧 + 动作条形，G4） ----------
 print("\n=== 序列总览图 ===")
-fig = plt.figure(figsize=(16, 9))
-gs = GridSpec(3, SEQ_LEN, figure=fig, hspace=0.6, wspace=0.05)
+n_seqs = len(SEQ_STARTS)
+n_rows = (n_seqs + SEQ_LEN - 1) // SEQ_LEN  # 每行 5 段，向上取整
+fig = plt.figure(figsize=(16, 3 * n_rows))
+gs = GridSpec(n_rows, SEQ_LEN, figure=fig, hspace=0.7, wspace=0.05)
 
 for si, start_s in enumerate(SEQ_STARTS):
+    r, c = divmod(si, SEQ_LEN)
     for fi in range(SEQ_LEN):
         sec = start_s + fi
         fid = int(sec * FPS)
         cid, row = frame_to_chunk_row(fid)
-        df = get_chunk_df(cid)
-        row_df = df.slice(row, 1)
-        _ = row_df  # 保留行数据供后续扩展
+        _ = get_chunk_df(cid)  # 触发缓存加载（帧画面展示用）
 
-        ax_img = fig.add_subplot(gs[si, fi])
+        ax_img = fig.add_subplot(gs[r, c])
         ax_img.imshow(plt.imread(FRAME_OUT / f"seq{si+1:02d}_f{fi}.png"))
         ax_img.set_xticks([]); ax_img.set_yticks([])
         ax_img.set_title(f"seq{si+1} f{fi}\n{sec}s", fontsize=8)
@@ -103,10 +104,10 @@ for si, start_s in enumerate(SEQ_STARTS):
         df = get_chunk_df(cid).slice(row, 1)
         pressed = [b for b in BUTTONS if int(df[b].sum()) > 0]
         seq_actions.append(pressed)
-    summary = f"buttons: {' '.join(seq_actions[0]) or '(none)'}"
-    fig.text(0.02, 0.85 - si*0.30, summary, fontsize=8, family="monospace")
+    summary = f"seq{si+1} buttons: {' '.join(seq_actions[0]) or '(none)'}"
+    fig.text(0.02, 0.92 - si * (0.82 / n_seqs), summary, fontsize=8, family="monospace")
 
-fig.suptitle("Sequence overview (3 seqs × 5 frames, Z1r1S--MJS4)", fontsize=14)
+fig.suptitle(f"Sequence overview ({n_seqs} seqs × {SEQ_LEN} frames, Z1r1S--MJS4)", fontsize=14)
 fig.savefig(FIG_OUT / "seq_overview.png", dpi=120, bbox_inches="tight")
 plt.close(fig)
 print(f"  -> {FIG_OUT / 'seq_overview.png'}")
