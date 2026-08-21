@@ -10,51 +10,30 @@
     python scripts/viz_curves.py --batch [--k 1] [--frames 20]
 """
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 
 import numpy as np
-import polars as pl
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 from common import (
-    BUTTONS, FPS, BTN_THRESHOLD, PRED_ROW, SHARD, BUTTON_TO_MODEL_COL, get_chunk_df,
+    BUTTONS, FPS, BTN_THRESHOLD, PRED_ROW, BUTTON_TO_MODEL_COL, get_chunk_df, fetch_frame,
+    CHUNK_SIZE,
 )
 
 sys.path.insert(0, str(ROOT.parent.parent.parent / "NitroGen"))
 from nitrogen.inference_client import ModelClient  # type: ignore
 
-VIDEO = r"D:/2+课产品/TOP 1 IN 2S _ Ranked 2v2 w_ oKhaliD (1).mp4"
-CHUNK_SIZE = 1200
 CURVES_DIR = ROOT / "results" / "figures" / "curves"
 
 # 批量模式段起点（秒）：统计集 60~600 每 30s 一段 + 测试集 630/660 两段
 BATCH_STARTS = [60, 90, 120, 150, 180, 210, 240, 270, 300, 330,
                 360, 390, 420, 450, 480, 510, 540, 570, 600, 630, 660]
-
-
-def fetch_frame(fid: int, tmp_dir: Path) -> np.ndarray:
-    sec = fid / FPS
-    p = tmp_dir / f"f{fid}.png"
-    subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-ss", f"{sec:.3f}",
-         "-i", VIDEO, "-frames:v", "1", "-q:v", "2", str(p)],
-        check=True, capture_output=True,
-    )
-    img = mpimg.imread(str(p))
-    p.unlink()
-    if img.dtype != np.uint8:
-        img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
-    if img.shape[-1] == 4:
-        img = img[..., :3]
-    return img
 
 
 def render_segment(client, start_s: int, frames: int, k: int, out_p: Path, tmp_dir: Path):

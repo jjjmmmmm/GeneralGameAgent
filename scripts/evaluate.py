@@ -10,7 +10,6 @@
 输出：每帧明细 + 合计（M4 判定）
 """
 import argparse
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -18,20 +17,17 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 import numpy as np
 import polars as pl
-import matplotlib.image as mpimg
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 from common import (
     BUTTONS, FPS, BTN_THRESHOLD, PRED_ROW, SHARD, BUTTON_TO_MODEL_COL,
-    VALID_MODEL_COLS, MODEL_BUTTON_DIM,
+    VALID_MODEL_COLS, MODEL_BUTTON_DIM, CHUNK_SIZE, fetch_frame,
 )
 
 sys.path.insert(0, str(ROOT.parent.parent.parent / "NitroGen"))
 from nitrogen.inference_client import ModelClient  # type: ignore
 
-VIDEO = r"D:/2+课产品/TOP 1 IN 2S _ Ranked 2v2 w_ oKhaliD (1).mp4"
-CHUNK_SIZE = 1200
 TEST_CHUNKS = ["0032", "0033", "0034"]
 TEST_START_SEC = 640          # chunk_0032 起点
 TEST_DURATION_SEC = 60        # 3 chunks × 20s
@@ -42,24 +38,6 @@ def pick_frames(n: int) -> list[int]:
     total = len(TEST_CHUNKS) * CHUNK_SIZE
     step = total / n
     return [TEST_START_SEC * FPS + int(i * step) for i in range(n)]
-
-
-def fetch_frame(fid: int, tmp_dir: Path) -> np.ndarray:
-    """按帧号抽帧（ffmpeg -ss 精确到帧号/60 秒）。"""
-    sec = fid / FPS
-    p = tmp_dir / f"f{fid}.png"
-    subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-ss", f"{sec:.3f}",
-         "-i", VIDEO, "-frames:v", "1", "-q:v", "2", str(p)],
-        check=True, capture_output=True,
-    )
-    img = mpimg.imread(str(p))
-    p.unlink()
-    if img.dtype != np.uint8:
-        img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
-    if img.shape[-1] == 4:
-        img = img[..., :3]
-    return img
 
 
 def get_label_btn(fid: int, cache: dict) -> np.ndarray:

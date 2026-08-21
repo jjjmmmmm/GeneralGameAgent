@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""D5 共享常量与工具：按钮列表、帧号映射、分块读取缓存
+"""D5 共享常量与工具：按钮列表、帧号映射、分块读取缓存、抽帧
 
-供 run_stats_all.py / visualize.py / e2e_test.py 复用，避免重复实现。
-stats.py 为既有接口（D4 审查通过），保持独立不依赖本模块。
+供 run_stats_all.py / visualize.py / e2e_test.py / evaluate.py / viz_curves.py / probe_pred_row.py 复用，
+避免重复实现。stats.py 为既有接口（D4 审查通过），保持独立不依赖本模块。
 """
+import subprocess
+import numpy as np
 import polars as pl
+import matplotlib.image as mpimg
 from pathlib import Path
 
 # 标注 17 键（与 actions_processed.parquet 列一致）
@@ -19,9 +22,9 @@ CHUNK_SIZE = 1200          # 每 chunk 帧数（20s × 60fps）
 FPS = 60                   # 视频帧率
 BUTTON_DIM = 17            # 标注键数
 MODEL_BUTTON_DIM = 21      # 模型输出 buttons 维度
-MODEL_STEPS = 8            # 动作块步数
+MODEL_STEPS = 18           # 动作块步数（D7 实测 pred shape (18,2)/(18,21)，原 8 为错误推断）
 BTN_THRESHOLD = 0.5        # 按钮预测视为按下的阈值
-PRED_ROW = 0               # 取动作块第 0 步作为当前帧预测（D6 需严格验证）
+PRED_ROW = 0               # 取动作块第 0 步作为当前帧预测（D7 已 18 步全测排除时序偏移）
 
 # 模型 buttons 21 维动作顺序（官方 NitroGen/nitrogen/shared.py BUTTON_ACTION_TOKENS，G1 源码法结论）
 MODEL_BUTTON_ORDER = [
@@ -51,11 +54,33 @@ VALID_MODEL_COLS: list[int] = [k for k, v in MODEL_COL_TO_BUTTON.items() if v is
 
 # 选定视频的数据根路径
 SHARD = Path(r"D:/2+课产品/_data/SHARD_0088/Z1r1S--MJS4")
+VIDEO = Path(r"D:/2+课产品/TOP 1 IN 2S _ Ranked 2v2 w_ oKhaliD (1).mp4")
 
 
 def frame_to_chunk_row(fid: int) -> tuple[str, int]:
     """视频帧号 → (chunk_id 四位字符串, parquet 行号)。"""
     return f"{fid // CHUNK_SIZE:04d}", fid % CHUNK_SIZE
+
+
+def fetch_frame(fid: int, tmp_dir: Path) -> np.ndarray:
+    """按帧号从视频抽帧（ffmpeg -ss 精确到秒），返回 HxWx3 uint8 图像。
+
+    抽帧失败抛 subprocess 异常（宁可中断不静默），图像自动去 alpha、转 uint8。
+    """
+    sec = fid / FPS
+    p = tmp_dir / f"f{fid}.png"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-ss", f"{sec:.3f}",
+         "-i", str(VIDEO), "-frames:v", "1", "-q:v", "2", str(p)],
+        check=True, capture_output=True,
+    )
+    img = mpimg.imread(str(p))
+    p.unlink()
+    if img.dtype != np.uint8:
+        img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+    if img.shape[-1] == 4:  # RGBA
+        img = img[..., :3]
+    return img
 
 
 _chunk_cache: dict[str, pl.DataFrame] = {}
