@@ -1,47 +1,45 @@
 # -*- coding: utf-8 -*-
-"""T2/M2 后半：摇杆分布图 + 序列可视化（帧画面与动作标注对齐）
+"""M2 后半：摇杆分布图 + 序列可视化（帧画面与动作标注对齐）
 
-抽帧策略（砍单版）：从统计集 chunk_0001 起步（避开 chunk_0000 菜单期）
-选 3 段起点 [60s, 180s, 300s]（均在比赛进行中），每段 5 帧连续
-共 15 帧抽帧 + 3 段序列图 + 1 张 2x2 摇杆分布图
+抽帧策略（D5 砍单版）：从统计集 chunk_0001 起步（避开 chunk_0000 菜单期）
+选 3 段起点 [60s, 180s, 300s]（均在比赛进行中），每段 5 帧连续，共 15 帧
 
 输出：
 - _data/frames/Z1r1S--MJS4/seq/seqNN_fN.png   抽出的帧画面
 - results/figures/joystick_distribution.png   2x2 摇杆分布直方图
-- results/figures/seq_overview.png            3 段序列横排总览图（含标注条形）
+- results/figures/seq_overview.png            3 段序列横排总览图（含动作标注）
+
+D6 扩展：序列起点列表加至 10 段（G4）；M7 批量曲线可视化另建 viz_curves.py（G8）。
 """
-import sys, subprocess
+import subprocess
 from pathlib import Path
+import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
-import polars as pl
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
 ROOT = Path(__file__).resolve().parent.parent
-SHARD = Path(r"D:/2+课产品/_data/SHARD_0088/Z1r1S--MJS4")
+sys.path.insert(0, str(ROOT / "scripts"))
+from common import BUTTONS, SHARD, FPS, get_chunk_df, frame_to_chunk_row
+
 VIDEO = Path(r"D:/2+课产品/TOP 1 IN 2S _ Ranked 2v2 w_ oKhaliD (1).mp4")
 FRAME_OUT = Path(r"D:/2+课产品/_data/frames/Z1r1S--MJS4/seq")
 FIG_OUT = ROOT / "results" / "figures"
 FRAME_OUT.mkdir(parents=True, exist_ok=True)
 FIG_OUT.mkdir(parents=True, exist_ok=True)
 
-# 选 3 段起点（视频秒），避开 chunk_0000 菜单期
+# D5 用 3 段（D6 补至 ≥10 段，见差距清单 G4）
 SEQ_STARTS = [60, 180, 300]
 SEQ_LEN = 5
-CHUNK_SIZE = 1200
-FPS = 60
 
 # ---------- 1. 抽帧 ----------
 print("=== 抽帧 ===")
-all_frames = []  # (seq_idx, frame_idx_in_seq, video_sec, parquet_row, frame_path)
 for si, start_s in enumerate(SEQ_STARTS):
-    for fi, off in enumerate(range(SEQ_LEN)):
-        sec = start_s + off
-        frame_id_global = int(sec * FPS)
-        # 抽帧
+    for fi in range(SEQ_LEN):
+        sec = start_s + fi
         out_png = FRAME_OUT / f"seq{si+1:02d}_f{fi}.png"
         cmd = [
             "ffmpeg", "-v", "error", "-y",
@@ -52,29 +50,9 @@ for si, start_s in enumerate(SEQ_STARTS):
             str(out_png),
         ]
         subprocess.run(cmd, check=True)
-        all_frames.append((si, fi, sec, frame_id_global, out_png))
         print(f"  seq{si+1} f{fi} @ {sec}s -> {out_png.name}")
 
-# ---------- 2. 读动作标注 ----------
-# 帧号 → chunk_id 和 行号
-def frame_to_chunk_row(fid: int):
-    cid = fid // CHUNK_SIZE
-    row = fid % CHUNK_SIZE
-    return f"{cid:04d}", row
-
-# 合并所有 chunk 的 17 键 + 摇杆到一个 dict（按 chunk_id 分组缓存）
-chunk_cache = {}
-def get_chunk_df(cid: str):
-    if cid not in chunk_cache:
-        p = SHARD / f"Z1r1S--MJS4_chunk_{cid}" / "actions_processed.parquet"
-        chunk_cache[cid] = pl.read_parquet(p)
-    return chunk_cache[cid]
-
-BUTTONS = ["back","dpad_down","dpad_left","dpad_right","dpad_up","east","guide",
-           "left_shoulder","left_thumb","left_trigger","north","right_shoulder",
-           "right_thumb","right_trigger","south","start","west"]
-
-# ---------- 3. 摇杆分布图（全 35 chunks 摇杆数据） ----------
+# ---------- 2. 摇杆分布图（全 35 chunks） ----------
 print("\n=== 摇杆分布图 ===")
 all_jlx, all_jly, all_jrx, all_jry = [], [], [], []
 for cid in range(35):
@@ -98,38 +76,33 @@ fig.savefig(FIG_OUT / "joystick_distribution.png", dpi=120)
 plt.close(fig)
 print(f"  -> {FIG_OUT / 'joystick_distribution.png'}")
 
-# ---------- 4. 序列总览图（3 段横排，每段 5 帧 + 下方动作条形） ----------
+# ---------- 3. 序列总览图（3 段横排，每段 5 帧 + 动作条形） ----------
 print("\n=== 序列总览图 ===")
 fig = plt.figure(figsize=(16, 9))
 gs = GridSpec(3, SEQ_LEN, figure=fig, hspace=0.6, wspace=0.05)
 
 for si, start_s in enumerate(SEQ_STARTS):
-    for fi, off in enumerate(range(SEQ_LEN)):
-        sec = start_s + off
+    for fi in range(SEQ_LEN):
+        sec = start_s + fi
         fid = int(sec * FPS)
         cid, row = frame_to_chunk_row(fid)
         df = get_chunk_df(cid)
         row_df = df.slice(row, 1)
+        _ = row_df  # 保留行数据供后续扩展
 
-        # 上方：帧画面
         ax_img = fig.add_subplot(gs[si, fi])
         ax_img.imshow(plt.imread(FRAME_OUT / f"seq{si+1:02d}_f{fi}.png"))
         ax_img.set_xticks([]); ax_img.set_yticks([])
         ax_img.set_title(f"seq{si+1} f{fi}\n{sec}s", fontsize=8)
 
-    # 在每段最右侧附加一个动作条形汇总（17 键总和 + 摇杆均值）
-    # 实际已用 GridSpec 3x5；动作汇总放段底（动态添加 subplot）
-    # 简化：段底用一个图注文本即可
     seq_actions = []
-    for fi, off in enumerate(range(SEQ_LEN)):
-        sec = start_s + off
+    for fi in range(SEQ_LEN):
+        sec = start_s + fi
         fid = int(sec * FPS)
         cid, row = frame_to_chunk_row(fid)
         df = get_chunk_df(cid).slice(row, 1)
         pressed = [b for b in BUTTONS if int(df[b].sum()) > 0]
-        jl = df["j_left"].to_list()[0]
         seq_actions.append(pressed)
-    # 段末的标题
     summary = f"buttons: {' '.join(seq_actions[0]) or '(none)'}"
     fig.text(0.02, 0.85 - si*0.30, summary, fontsize=8, family="monospace")
 
@@ -139,5 +112,3 @@ plt.close(fig)
 print(f"  -> {FIG_OUT / 'seq_overview.png'}")
 
 print("\n=== 完成 ===")
-print(f"抽帧: {FRAME_OUT}")
-print(f"出图: {FIG_OUT}")
