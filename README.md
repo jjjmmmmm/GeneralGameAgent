@@ -24,12 +24,12 @@ NitroGen 是 NVIDIA 开源的通用游戏智能体基础模型（500M 参数 DiT
 | MVP | 内容 | 状态 |
 |-----|------|------|
 | M1 | 跑通官方 ng.pt 推理，README 可复现 | ✅ 已达成（D4） |
-| M2 | 单游戏 ≥500 帧统计 + ≥10 条序列可视化 | ⬜ 未开始（计划 D5） |
-| M3 | 离线评测脚本（≥200 帧隔离测试集） | ⬜ 未开始（计划 D5） |
-| M4 | zero-shot 基线：按键准确率 ≥50%、摇杆相关系数 ≥0.4 | ⬜ 未开始（计划 D6） |
-| M5 | 模型输出 vs 人类标注对比演示 | ⬜ 未开始（计划 D5） |
-| M6 | 归档：代码 + 指标表 + ≥3000 字实验报告 | ⬜ 未开始（计划 D8） |
-| M7 | 扩展：可视化工具（≥20 段动作曲线 + 差异帧标注） | ⬜ 未开始（计划 D6-D7） |
+| M2 | 单游戏 ≥500 帧统计 + ≥10 条序列可视化 | ✅ 已达成（D5-D6：42000 帧统计 + 10 条序列总览图） |
+| M3 | 离线评测脚本（≥200 帧隔离测试集） | ✅ 已达成（D6：`scripts/evaluate.py`，chunk_0032~0034 隔离） |
+| M4 | zero-shot 基线：按键准确率 ≥50%、摇杆相关系数 ≥0.4 | 🟡 部分达成（D6：按键准确率 88.3% ✅；摇杆相关系数 -0.1 ❌，D7 归因） |
+| M5 | 模型输出 vs 人类标注对比演示 | ✅ 已达成（D6：`results/m5_demo_table.md` 逐帧对比表） |
+| M6 | 归档：代码 + 指标表 + ≥3000 字实验报告 | ⬜ 计划 D8 |
+| M7 | 扩展：可视化工具（≥20 段动作曲线 + 差异帧标注） | 🟡 骨架完成（D6：`scripts/viz_curves.py` 单段）；批量 ≥20 段计划 D7 |
 
 进度日志：
 
@@ -37,6 +37,8 @@ NitroGen 是 NVIDIA 开源的通用游戏智能体基础模型（500M 参数 DiT
 - **D2（08-20）**：环境就绪（venv + PyTorch cu128，RTX 5060 验证通过）；权重 ng.pt 与数据分片（SHARD_0088）下载完成；选定评测视频 Z1r1S--MJS4（rocket_league，35 chunks，含官方 actions_processed）；模块图 + 职责表 + 技术选型比选完成。
 - **D3（08-20）**：数据模型与接口约定定稿（5 实体 + A~F 接口 + 17↔21 键对照）；项目备忘建立；game mapping 验证（ng.pt 的 `game_mapping_cfg=None`，serve.py 无条件分支可直启）；统计脚本 `scripts/stats.py` 起步（M2 骨架）。
 - **D4（08-21）**：**M1 达成**——serve.py 首跑成功并返回 8 步动作块；README 可复现路径验证。
+- **D5（08-21）**：**主路径贯通**——视频抽帧与 parquet 标注帧对齐三重验证通过（帧号 = chunk_id×1200 + 行号）；M2 前半（42000 帧统计 + 摇杆分布图）；真帧端到端跑通（5 帧链路验证）；演示说明 + 差距清单建立；17↔21 键"前 17 列"假设被 G1 后续推翻。
+- **D6（08-21）**：**核心推进**——G1 键序映射确认（官方 BUTTON_ACTION_TOKENS）；M3 达成（200 帧隔离测试集评测）；M4 部分达标（按键 88.3% ✅ / 摇杆 ❌，见 G11）；M5 对比表；G4 序列可视化补至 10 条；M7 骨架（viz_curves.py）；演示说明 v2 + 自走完成（发现并修复 HF 离线启动坑）。
 
 **范围外（明确不做）**：实机 Windows 游戏接入、模型微调、数据过滤管线、Open P2P 对照、数据集全库下载、自采数据。原因详见立项书第 4 节。
 
@@ -46,7 +48,7 @@ NitroGen 是 NVIDIA 开源的通用游戏智能体基础模型（500M 参数 DiT
 |----|------|------|
 | 操作系统 | Windows 11 | ✅ |
 | Python | ≥ 3.12（官方要求） | ✅ 已安装（系统级，项目用 venv 隔离） |
-| GPU | NVIDIA RTX 5060 8GB（Blackwell，sm_120，需 cu128 及以上 PyTorch） | ⏳ 待 D2 验证 |
+| GPU | NVIDIA RTX 5060 8GB（Blackwell，sm_120，需 cu128 及以上 PyTorch） | ✅ D2 已验证（PyTorch cu128，`torch.cuda.is_available()=True`） |
 | 磁盘 | ≥ 5GB 可用（权重 + 数据分片，存放于仓库外） | ✅ |
 
 ## 安装（D4 已验证）
@@ -68,7 +70,8 @@ pip install -e ../NitroGen --no-deps
 
 # 5. 下载模型权重（仓库外 _models/，约 1.97GB）
 #    https://huggingface.co/nvidia/NitroGen 的 ng.pt
-#    首次启动推理需网络下载视觉编码器 siglip2（建议开启 TUN/全局代理）
+#    视觉编码器 siglip2 首次启动需联网下载一次（建议开启 TUN/全局代理），
+#    之后缓存到 ~/.cache/huggingface，可离线运行（见下方 HF_HUB_OFFLINE 说明）
 ```
 
 > 说明：`NitroGen` 默认依赖含实机注入库（vgamepad/dxcam 等），本项目仅做离线推理，故用 `--no-deps` 并手动装 serve 所需依赖。
@@ -78,67 +81,82 @@ pip install -e ../NitroGen --no-deps
 ### 启动推理服务（serve.py，M1）
 
 ```powershell
-# 方式一：脚本启动（监听 tcp://*:5555）
-powershell -File scripts/run_serve.ps1
+# 方式一：脚本启动（推荐，监听 5555，工作区根目录执行）
+#   内置 HF_HUB_OFFLINE=1 离线加载（siglip2 已缓存），避免无代理时联网检查卡死
+cd D:\2+课产品
+powershell -ExecutionPolicy Bypass -File _start_serve_d5.ps1
 
-# 方式二：直接启动（需先开 TUN/全局代理下载 siglip2，之后可离线）
+# 方式二：直接启动（需先开 TUN/全局代理下载 siglip2）
+$env:HF_HUB_OFFLINE = "1"
 .venv\Scripts\python.exe ..\NitroGen\scripts\serve.py ..\..\_models\ng.pt --port 5555
 ```
 
-启动后约 8 秒加载完成（torch.load + 模型构建 + 迁移 GPU），监听 5555。
+启动后约 36~40 秒加载完成（torch.load + 模型构建 + 迁移 GPU），监听 5555。
 > 判断服务就绪请测端口：`Test-NetConnection 127.0.0.1 -Port 5555`（WMI/重定向下日志缓冲，勿以日志为准）。
+> **坑**：若未设 `HF_HUB_OFFLINE=1` 且无代理，serve 会卡死在 config 打印后（transformers 联网检查 HF），CPU=0 端口不开。离线模式已实测 ~40s 就绪。
 
 ### 提交 1 帧推理请求（M1 验收）
 
 ```python
 from nitrogen.inference_client import ModelClient
 import numpy as np
-frame = np.full((1080, 1920, 3), 128, dtype=np.uint8)   # 帧假实现：灰图
+frame = np.full((1080, 1920, 3), 128, dtype=np.uint8)   # 单帧真图或灰图均可（HxWx3 uint8）
 resp = ModelClient("127.0.0.1", 5555).predict(frame)
 # resp['j_left'] shape (18,2) / resp['j_right'] shape (18,2) / resp['buttons'] shape (18,21)
-# 即 8 步动作块：双摇杆连续值 + 21 键动作空间
+# 即 8 步动作块：双摇杆连续值 + 21 键动作空间（键序见 docs/键序映射表.md）
 ```
 
 ### 停止服务
 
 ```powershell
-# 找到 serve.py 的 python 进程后结束；或按实际 pid 结束
-Get-Process python | Where-Object { $_.CommandLine -match 'serve.py' } | Stop-Process
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*serve.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-### 数据统计（M2 骨架，D3 已实现）
+### 数据统计与序列可视化（M2，D5-D6 已达成）
 
 ```powershell
-# 输出 17 键频率表 + 帧数
-.venv\Scripts\python.exe scripts\stats.py <parquet路径>
+# 单 chunk 按键频率表（stats.py，D3）
 .venv\Scripts\python.exe scripts\stats.py ..\..\_data\SHARD_0088\Z1r1S--MJS4\Z1r1S--MJS4_chunk_0000\actions_processed.parquet
+
+# 全量 35 chunks 统计 + 统计集/测试集分列频率表（run_stats_all.py）
+.venv\Scripts\python.exe scripts\run_stats_all.py
+
+# 摇杆分布图 + 10 段序列总览图（visualize.py）
+.venv\Scripts\python.exe scripts\visualize.py
 ```
 
-### 后续（随 D5-D8 开发补全）
+### 离线批量评测（M3/M4，D6 已达成）
 
-```bash
-# 离线批量评测（待 D5-D6）
-python scripts/evaluate.py --test-set <path> --output results/
+```powershell
+# 200 帧隔离测试集（chunk_0032~0034），K=3 多数票控制随机性
+.venv\Scripts\python.exe scripts\evaluate.py --n 200 --k 3
+# 快速验证（10 帧，约 13s；必须带 --out 独立文件，勿覆盖正式报告）
+.venv\Scripts\python.exe scripts\evaluate.py --n 10 --k 1 --out results\test_set_metrics_smoke.md
+```
 
-# 批量动作曲线可视化（待 D6-D7）
-python scripts/visualize.py --results results/ --out figures/
+输出：`results/test_set_metrics.md`（M4 判定 + 每帧明细）。
+
+### 动作曲线可视化（M7 骨架，D6）
+
+```powershell
+# 单段曲线：gt/pred 按键热图 + j_left 对比 + top5 差异帧标注
+.venv\Scripts\python.exe scripts\viz_curves.py --start 640 --frames 10 --k 1
 ```
 
 ## 项目结构
 
 ```
 GeneralGameAgent/
-├── docs/                 # 立项书、项目备忘、选型/数据模型/接口约定/serve 适配记录
-├── scripts/              # stats.py（统计）、verify_gamemap.py（game mapping 验证）、run_serve.ps1
+├── docs/                 # 立项书、项目备忘、键序映射表、演示说明、差距清单、开发日志等
+├── scripts/              # stats / run_stats_all / visualize / evaluate / viz_curves / e2e_test 等
+├── results/              # 指标表（Markdown）与小体积图示（figures/）
 ├── requirements.txt      # serve 依赖清单（显式，非 extras）
 ├── AGENTS.md             # 工程工作流配置（Matt Pocock skills）
 ├── .scratch/             # 本地 issue tracker（spec/tickets，不入仓）
 └── README.md
 ```
 
-> 模型权重（`_models/ng.pt`）与数据集分片（`_data/`）**不入仓库**；仓库体积控制在 10MB 以内。
-
-> 模型权重（`ng.pt`）与数据集分片**不入仓库**，通过脚本按需下载至本机指定目录；仓库体积控制在 10MB 以内。
+> 模型权重（`_models/ng.pt`，工作区根目录下）与数据集分片（`_data/`）**不入仓库**，通过脚本按需下载至本机指定目录；仓库体积控制在 10MB 以内。
 
 ## 数据与模型
 
@@ -155,10 +173,10 @@ GeneralGameAgent/
 | D1 | 选题立项 | ✅ 立项书 |
 | D2 | 组成与技术选型 | 环境、权重、数据就绪；模块图与比选表 |
 | D3 | 数据与调用约定 | 数据模型、接口约定、项目备忘 |
-| D4 | 工程起步 | M1 推理首跑可复现 |
-| D5 | 主路径贯通 | M2/M3/M5 阶段演示 |
-| D6 | 核心推进 | M4 指标达标；M7 起步 |
-| D7 | 贯通验证 | M7 完成；通检 ≥5 条 |
+| D4 | 工程起步 | ✅ M1 推理首跑可复现 |
+| D5 | 主路径贯通 | ✅ M2 前半（统计）+ 端到端贯通 + 演示说明/差距清单 |
+| D6 | 核心推进 | ✅ M2/M3/M5；M4 部分达标（按键 ✅ / 摇杆 ❌）；M7 骨架 |
+| D7 | 贯通验证 | M7 批量完成；通检 ≥5 条 |
 | D8 | 交付准备 | M6 归档；验收自测表 |
 | D9 | 结课 | 大报告 |
 
